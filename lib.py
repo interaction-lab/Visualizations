@@ -5,8 +5,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import plotly.express as px
 import random
-from sklearn.metrics import cohen_kappa_score
 import plotly.graph_objects as go
+from xgboost import XGBClassifier
 
 
 
@@ -14,12 +14,13 @@ def hello():
     print(f"")
 
 
-df = pd.read_csv(r'C:\Users\ayush\Downloads\openface\OpenFace_2.2.0_win_x64\processed\Lauren_Engagement.csv')
-ll = pd.read_csv(r'C:\Users\ayush\OneDrive\Documents\Lauren_Lauren_CSV.csv')
-al = pd.read_csv(r'C:\Users\ayush\OneDrive\Documents\Ayushi_Lauren_CSV.csv')
+df = pd.read_csv('Lauren_Engagement.csv')
+df.columns = df.columns.str.replace(' ', '')
+ll = pd.read_csv('Lauren_Lauren_CSV.csv')
+al = pd.read_csv('Ayushi_Lauren_CSV.csv')
 
-x_name = np.array([i for i in df.columns.values if i.startswith(' x')])
-y_name = np.array([i for i in df.columns.values if i.startswith(' y')])
+x_name = np.array([i for i in df.columns.values if i.startswith('x')])
+y_name = np.array([i for i in df.columns.values if i.startswith('y')])
 
 start_time = 0
 endtime = 389
@@ -36,7 +37,7 @@ eyegaze = 0
 
 
 facial_action = np.array([i for i in df.columns.values if i.endswith('_r')])
-AU = ["Brow Raiser", "Brow Lowerer", "Upper Lid Raiser", "Cheek Raiser", "Lid Tightener", "Nose Wrinkler",
+AU = ["Upper Brow Raiser", "Lower Brow Raiser", "Brow Lowerer", "Upper Lid Raiser", "Cheek Raiser", "Lid Tightener", "Nose Wrinkler",
       "Upper Lip Raiser", "Lip Corner Puller", "Dimpler", "Lip Corner Depressor", "Chin Raiser", "Lip Stretcher",
       "Lip Tightener", "Lips Part", "Jaw Drop"]
 intensity = [0 for i in range(len(AU))]
@@ -82,7 +83,7 @@ def figure():
     fig = go.Figure()
     engaged = []
     disengaged = []
-
+    wrong = []
     for i in range(0, len(al_arr), 25):
         if al_arr[i] == 1:
             engaged.append(int(i / 25))
@@ -93,12 +94,39 @@ def figure():
     fig.add_trace(go.Scatter(
         x=disengaged, y=[0 for i in range(len(disengaged))], mode='markers', marker_size=10,name="Disengaged"
     ))
+    fig.add_trace(go.Scatter(
+        x=wrong, y=[0 for i in range(len(wrong))], mode='markers', marker_size=10, name="Model Was WRONG"
+    ))
     fig.update_xaxes(showgrid=False, title_text="Seconds")
     fig.update_yaxes(showgrid=False,
                      zeroline=True, zerolinecolor='black', zerolinewidth=3,
                      showticklabels=False,)
     fig.update_layout(height=200, plot_bgcolor='white')
     fig.show()
+
+def wrong_figure(y_pred):
+    fig = go.Figure()
+    wrong = []
+    right = []
+    for i in range(0, len(al_arr), 25):
+        if al_arr[i] != y_pred[i]:
+            wrong.append(int(i / 25))
+        else:
+            right.append(int(i/25))
+    fig.add_trace(go.Scatter(
+        x=wrong, y=[0 for i in range(len(wrong))], mode='markers', marker_size=10, name="Model Was WRONG"
+    ))
+    fig.add_trace(go.Scatter(
+        x=right, y=[0 for i in range(len(right))], mode='markers', marker_size=5, name="Model Was RIGHT"
+    ))
+    fig.update_xaxes(showgrid=False, title_text="Seconds")
+    fig.update_yaxes(showgrid=False,
+                     zeroline=True, zerolinecolor='black', zerolinewidth=3,
+                     showticklabels=False, )
+    fig.update_layout(height=200, plot_bgcolor='white')
+    fig.show()
+
+
 
 class Bar:
     def __init__(self, width, height):
@@ -119,8 +147,8 @@ class Bar:
     def get_graph(self):
         return self.graph
 
-def kappa():
-    print("Cohen's Kappa:", cohen_kappa_score(al_arr, ll_arr))
+# def kappa():
+#     print("Cohen's Kappa:", cohen_kappa_score(al_arr, ll_arr))
 
 #Run if graph needed
 class Graph:
@@ -128,7 +156,7 @@ class Graph:
         self.height = height
         self.width = width
         self.graph = np.zeros((height, width, 3), np.uint8)
-    def update_frame(self, value, engage):
+    def update_frame(self, value, engage, wrong):
         if value < 0:
             value = 0
         elif value >= self.height:
@@ -137,6 +165,8 @@ class Graph:
         new_graph[:,:-1,:] = self.graph[:,1:,:]
         if engage == 0:
             new_graph[:,-1,:-2] = 255
+        if wrong == 1:
+            new_graph[:, -1] = (0,0,255)
         new_graph[self.height - value:self.height - value + 3,-1,:] = 255
         new_graph[self.height - value:,-1,:] = 255
         self.graph = new_graph
@@ -145,14 +175,22 @@ class Graph:
 
 pastTime = 0
 
+global y_pred
+y_pred = []
 
-eye_1 = np.array([i for i in df.columns.values if i.startswith(' gaze_angle')])
-eye_lmk_20_x = np.array([i for i in df.columns.values if i.startswith(' eye_lmk_x_20')])
-eye_lmk_20_y = np.array([i for i in df.columns.values if i.startswith(' eye_lmk_y_20')])
-eye_lmk_50_x = np.array([i for i in df.columns.values if i.startswith(' eye_lmk_x_50')])
-eye_lmk_50_y = np.array([i for i in df.columns.values if i.startswith(' eye_lmk_y_50')])
 
-def visual():
+
+
+
+
+
+eye_1 = np.array([i for i in df.columns.values if i.startswith('gaze_angle')])
+eye_lmk_20_x = np.array([i for i in df.columns.values if i.startswith('eye_lmk_x_20')])
+eye_lmk_20_y = np.array([i for i in df.columns.values if i.startswith('eye_lmk_y_20')])
+eye_lmk_50_x = np.array([i for i in df.columns.values if i.startswith('eye_lmk_x_50')])
+eye_lmk_50_y = np.array([i for i in df.columns.values if i.startswith('eye_lmk_y_50')])
+
+def visual(y_pred):
     # Run to show visualization
     cap = cv2.VideoCapture('Lauren_Engagement.mp4')  # opening video
     cap.set(cv2.CAP_PROP_POS_MSEC, 1000 * start_time)  # setting start time
@@ -233,17 +271,19 @@ def visual():
                 color += 255 / (pastTime * 2)
         facial = df.loc[count, facial_action].values
         ind = intensity.index(1)
-        if ind == 0:
-            graph.update_frame(int((facial[ind] + facial[ind + 1]) / 2) * 10, al_arr[count])  # update to frame
-        else:
-            graph.update_frame(int(facial[ind]* 10), al_arr[count])  # update to frame
+        wrong = 0
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        if y_pred[count] != al_arr[count]:
+            wrong = 1
+            cv2.putText(frame, 'Model Predicted WRONG', (int(width - 200), int(height / 5 - 5)), font, 0.5, (0, 0, 255), 2)
+        graph.update_frame(int(facial[ind]* 10), al_arr[count], wrong)  # update to frame
         roi = frame[-70:-10, -1 * int(width):, :]  # height of graph
         roi[:] = graph.get_graph()  # copy current graph
-        font = cv2.FONT_HERSHEY_SIMPLEX
+
         string = "X-Axis: Time in seconds, Y-Axis: Intensity of {}".format(AU[ind])
         cv2.putText(frame, string, (int(width / 4), int(height - height / 7)), font, 0.5, (255, 255, 255), 2)
-        confidence = df.loc[1, ' confidence']
-        bar.update_frame(al_arr[count], confidence)  # update to frame
+        confidence = df.loc[1, 'confidence']
+        bar.update_frame(int(y_pred[count]), confidence)  # update to frame
         roi1 = frame[-405:-135, -74:-10, :]  # height of graph
         roi1[:] = bar.get_graph()  # copy current graph
         cv2.putText(frame, 'Disengaged', (int(width - 96), int(height / 4 - 5)), font, 0.5, (255, 0, 0), 1)
@@ -254,5 +294,7 @@ def visual():
             break
         if currtime / 1000 >= endtime:
             break  # end when time is up
+        if count == 9724:
+            break
     cap.release()
     cv2.destroyAllWindows()
